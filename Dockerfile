@@ -1,26 +1,26 @@
-FROM tiredofit/debian:stretch as builder
+FROM tiredofit/debian:buster as builder
 LABEL maintainer="Dave Conroy (dave at tiredofit dot ca)"
 
 ### Set Environment Variables
-ENV LIBREOFFICE_BRANCH=master \
-    ## cp-6.0.30
-    LIBREOFFICE_COMMIT=3ef1164bc3a13af481102e0abef06929c53bad8b \
+ENV LIBREOFFICE_BRANCH=libreoffice-6-3-4 \
+    ## cp-6.2.4
+    LIBREOFFICE_COMMIT=60da17e045e08f1793c57c00ba83cdfce946d0aa \
     LOOL_BRANCH=master \
-    ## 4.0.4.1
+    ## cp-4.2.0-4
     LOOL_COMMIT=a2132266584381c875fa707446417e259753e2f5 \
-    MAX_CONNECTIONS=5000 \
+    MAX_CONNECTIONS=500 \
     ## Uses Approximately 20mb per document open
-    MAX_DOCUMENTS=5000 \
-    POCO_VERSION=1.9.0
+    MAX_DOCUMENTS=500
+    # POCO_VERSION=1.9.0
 
 ### Get Updates
 RUN set -x && \
 ### Add Repositories
     apt-get update && \
     apt-get -o Dpkg::Options::="--force-confold" upgrade -y && \
-    echo "deb-src http://deb.debian.org/debian stretch main" >> /etc/apt/sources.list && \
-    echo "deb http://deb.debian.org/debian stretch contrib" >> /etc/apt/sources.list && \
-    curl -sL https://deb.nodesource.com/setup_6.x | bash - && \
+    echo "deb-src http://deb.debian.org/debian buster main" >> /etc/apt/sources.list && \
+    echo "deb http://deb.debian.org/debian buster contrib" >> /etc/apt/sources.list && \
+    curl -sL https://deb.nodesource.com/setup_10.x | bash - && \
     \
 ### Setup Distribution
     echo ttf-mscorefonts-installer msttcorefonts/accepted-mscorefonts-eula select true | debconf-set-selections && \
@@ -42,26 +42,19 @@ RUN set -x && \
             nodejs \
             openssl \
             python-polib \
+            python3-polib \
             sudo \
             translate-toolkit \
             ttf-mscorefonts-installer \
             wget \
+            libpoco-dev \
             && \
     \
     apt-get build-dep -y \
             libreoffice \
             && \
     \
-    ### Build and Install Poco Libraries
-    mkdir -p /usr/src/poco && \
-    curl -sSL https://pocoproject.org/releases/poco-${POCO_VERSION}/poco-${POCO_VERSION}-all.tar.gz | tar xvfz - --strip 1 -C /usr/src/poco && \
-    cd /usr/src/poco && \
-    ./configure \
-                --no-samples \
-                --no-tests \
-                --prefix=/opt/poco \
-                && \
-    make install && \
+    ### Build and Install Poco Libraries ### we take the version from the repo just like proposed by https://wiki.documentfoundation.org/Development/BuildingOnline
     \
 ### Build Fetch LibreOffice - This will take a while..
     git clone -b ${LIBREOFFICE_BRANCH} https://github.com/LibreOffice/core.git /usr/src/libreoffice-core && \
@@ -84,7 +77,7 @@ RUN set -x && \
 --disable-gstreamer-1-0 \n\
 --disable-gtk \n\
 --disable-gtk3 \n\
---disable-kde4 \n\
+# --disable-kde4 \n\
 --disable-odk \n\
 --disable-online-update \n\
 --disable-pdfimport \n\
@@ -105,9 +98,10 @@ RUN set -x && \
 --with-galleries=no \n\
 --with-lang=en-GB en-US\n\
 --with-linker-hash-style=both \n\
+--with-parallelism \n\
 --with-system-dicts \n\
 --with-system-zlib \n\
---with-theme=galaxy \n\
+--with-theme=tango \n\
 #--with-system-xmlsec \n\
 --without-branding \n\
 --without-help \n\
@@ -133,43 +127,60 @@ RUN set -x && \
     mkdir -p /opt/libreoffice && \
     chown -R lool /opt/libreoffice && \
     sudo -u lool make install && \
-    cp -R /usr/src/libreoffice-core/instdir/* /opt/libreoffice/ && \
-    \
+    cp -R /usr/src/libreoffice-core/instdir/* /opt/libreoffice/
+
+RUN set -x && \
+    apt-get -y install python-lxml && \
 ### Build LibreOffice Online (Not as long as above)
+    # git clone -b master https://github.com/LibreOffice/online.git /usr/src/libreoffice-online
     git clone -b ${LOOL_BRANCH} https://github.com/LibreOffice/online.git /usr/src/libreoffice-online && \
+    \
     cd /usr/src/libreoffice-online && \
     git reset --hard ${LOOL_COMMIT} && \
+    # git reset --hard a2132266584381c875fa707446417e259753e2f5 && \
     npm install -g \
                 bootstrap \
                 browserify-css \
                 d3 \
-                d3 \
+                @types/jquery \
                 eslint \
                 evol-colorpicker \
                 exorcist \
                 jake \
                 npm \
                 uglify-js \
+                # from https://github.com/LibreOffice/online/blob/distro/cib/libreoffice-6-3/loleaflet/package.json
+                uglifycss \
+                browserify-css@0.9.1 \
+                @braintree/sanitize-url@3.0.0 \
+                l10n-for-node \
+                uglifyify \
+                vex-js \
+                # js
+                socks \
                 && \
     \
     ./autogen.sh && \
     ./configure --enable-silent-rules \
-                --with-lokit-path=/usr/src/libreoffice-online/bundled/include \
-                --with-lo-path=/opt/libreoffice \
-                --with-max-connections=${MAX_CONNECTIONS} \
-                --with-max-documents=${MAX_DOCUMENTS} \
-                --with-poco-includes=/opt/poco/include \
-                --with-poco-libs=/opt/poco/lib \
-                --with-logfile=/var/log/lool/lool.log \
-                --prefix=/opt/lool \
-                --sysconfdir=/etc \
-                --localstatedir=/var && \
-    ( cd loleaflet/po && ../../scripts/downloadpootle.sh ) && \
+                                    --with-lokit-path=/usr/src/libreoffice-online/bundled/include \
+                                    --with-lo-path=/opt/libreoffice \
+                                    --with-max-connections=${MAX_CONNECTIONS} \
+                                    --with-max-documents=${MAX_DOCUMENTS} \
+                                    # --with-poco-includes=/opt/poco/include \
+                                    # --with-poco-libs=/opt/poco/lib \
+                                    --with-logfile=/var/log/lool/lool.log \
+                                    --prefix=/opt/lool \
+                                    --sysconfdir=/etc \
+                                    --disable-werror \
+                                    --localstatedir=/var && \
+    # ( cd loleaflet/po && ../../scripts/downloadpootle.sh ) && \
     ( cd loleaflet && make l10n) || exit 1 && \
     ( scripts/locorestrings.py /usr/src/libreoffice-online /usr/src/libreoffice-core/translations ) && \
     make -j`nproc` && \
     mkdir -p /opt/lool && \
     chown -R lool /opt/lool && \
+    mkdir /var/cache/loolwsd && \
+    chown -R lool /var/cache/loolwsd && \
     cp -R loolwsd.xml /opt/lool/ && \
     cp -R loolkitconfig.xcu /opt/lool && \
     make install && \
@@ -182,29 +193,31 @@ RUN set -x && \
     rm -rf /usr/share/man && \
     rm -rf /usr/share/locale && \
     rm -rf /var/lib/apt/lists/* && \
-    rm -rf /var/log/*
+    rm -rf /var/log/* && \
+    find /opt/lool
 
-FROM tiredofit/debian:stretch
+FROM tiredofit/debian:buster
 LABEL maintainer="Dave Conroy (dave at tiredofit dot ca)"
 
 ### Set Defaults
 ENV ADMIN_USER=admin \
     ADMIN_PASS=libreoffice \
     LOG_LEVEL=warning \
-    DICTIONARIES="en_GB en_US" \
+    DICTIONARIES="en_GB en_US de" \
     ENABLE_SMTP=false \
     PYTHONWARNINGS=ignore
 
 ### Grab Compiled Assets from builder image
 COPY --from=builder /opt/ /opt/
+COPY fonts/local /usr/share/fonts/truetype/
 
 ### Install Dependencies
 RUN set -x && \
     adduser --quiet --system --group --home /opt/lool lool && \
     \
 ### Add Repositories
-    echo "deb http://deb.debian.org/debian stretch contrib" >> /etc/apt/sources.list && \
-    curl -sL https://deb.nodesource.com/setup_6.x | bash - && \
+    echo "deb http://deb.debian.org/debian buster contrib" >> /etc/apt/sources.list && \
+    curl -sL https://deb.nodesource.com/setup_10.x | bash - && \
     \
     echo ttf-mscorefonts-installer msttcorefonts/accepted-mscorefonts-eula select true | debconf-set-selections && \
     apt-get -o Dpkg::Options::="--force-confold" upgrade -y && \
@@ -218,6 +231,7 @@ RUN set -x && \
              hunspell \
              hunspell-en-us \
              hunspell-en-gb \
+             hunspell-de-de \
 	     libcap2-bin \
              libcups2 \
              libfontconfig1 \
@@ -232,10 +246,12 @@ RUN set -x && \
              libxrender1 \
              locales \
              locales-all \
-             openssl \ 
+             openssl \
+             python3-polib \
              python3-requests \
              python3-websocket \
              sudo \
+             libpoco-dev \
              ttf-mscorefonts-installer \
              && \
     \
@@ -249,7 +265,7 @@ RUN set -x && \
     mkdir -p /var/cache/loolwsd && \
     chown -R lool /var/cache/loolwsd && \
     setcap cap_fowner,cap_mknod,cap_sys_chroot=ep /opt/lool/bin/loolforkit && \
-#    setcap cap_sys_admin=ep /opt/lool/bin/loolmount && \
+    # setcap cap_sys_admin=ep /opt/lool/bin/loolmount && \
     mkdir -p /usr/share/hunspell && \
     mkdir -p /usr/share/hyphen && \
     mkdir -p /usr/share/mythes && \
