@@ -96,7 +96,7 @@ RUN set -x && \
 --with-external-thes-dir=/usr/share/mythes \n\
 --with-fonts \n\
 --with-galleries=no \n\
---with-lang=en-GB en-US\n\
+--with-lang=en-GB en-US de fr\n\
 --with-linker-hash-style=both \n\
 --with-parallelism \n\
 --with-system-dicts \n\
@@ -232,6 +232,7 @@ RUN set -x && \
              hunspell-en-us \
              hunspell-en-gb \
              hunspell-de-de \
+             hunspell-fr \
 	     libcap2-bin \
              libcups2 \
              libfontconfig1 \
